@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flipkart Payment Reconciliation</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>₹</text></svg>">
+<link rel="stylesheet" href="assets/app.css">
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">OC</div>
+      <div><div class="brand-name">OakCraft Furniture</div><div class="brand-sub">Flipkart Payment Reconciliation</div></div>
+    </div>
+    <nav id="nav">
+      <button data-view="dashboard" class="active">Dashboard</button>
+      <button data-view="upload">Upload Files</button>
+      <button data-view="recon">Reconciliation</button>
+      <button data-view="exceptions">Exceptions <span class="pill" id="navExc"></span></button>
+      <button data-view="sku">SKU Analysis</button>
+      <button data-view="history">Weekly History</button>
+      <button data-view="reports">Reports</button>
+      <button data-view="quality">Data Quality <span class="pill warn" id="navDq"></span></button>
+      <button data-view="settings">Settings</button>
+    </nav>
+    <div class="side-foot" id="sideWeek">No files loaded</div>
+  </aside>
+
+  <main>
+    <header class="topbar">
+      <h1 id="viewTitle">Dashboard</h1>
+      <div class="topbar-right">
+        <input id="quickSearch" class="search" type="search" placeholder="Search SKU…" autocomplete="off">
+        <button class="btn primary" id="btnSaveWeek" disabled>Save this week</button>
+      </div>
+    </header>
+    <div id="banner"></div>
+
+    <!-- DASHBOARD -->
+    <section class="view active" id="view-dashboard">
+      <div id="dashEmpty" class="empty">
+        <h2>Upload this week's two files to begin</h2>
+        <p>Step 1: Expected Settlement Excel &nbsp;→&nbsp; Step 2: Actual Flipkart Settlement Excel. Everything else is automatic.</p>
+        <button class="btn primary" data-goto="upload">Go to Upload</button>
+      </div>
+      <div id="dashBody" hidden>
+        <div class="answer" id="answer"></div>
+        <div class="kpis" id="kpis"></div>
+        <h3 class="section">Financial summary</h3>
+        <div class="kpis small" id="fin"></div>
+        <div class="filters" id="dashFilters"></div>
+        <div class="grid2">
+          <div class="card"><div class="card-h">Expected vs Actual Settlement</div><div class="chart-box short"><canvas id="chTotals"></canvas></div></div>
+          <div class="card"><div class="card-h">Reconciliation Status (SKUs)</div><div class="chart-box short"><canvas id="chStatus"></canvas></div></div>
+          <div class="card"><div class="card-h">Top 10 Short Payment SKUs</div><div class="chart-box"><canvas id="chShort"></canvas></div></div>
+          <div class="card"><div class="card-h">Top 10 Excess Payment SKUs</div><div class="chart-box"><canvas id="chExcess"></canvas></div></div>
+        </div>
+        <div class="card"><div class="card-h">Expected vs Actual by SKU <span class="muted" id="bySkuNote"></span></div><div class="chart-box tall"><canvas id="chBySku"></canvas></div></div>
+      </div>
+    </section>
+
+    <!-- UPLOAD -->
+    <section class="view" id="view-upload">
+      <div class="steps">
+        <div class="drop" id="drop1" data-slot="expected">
+          <div class="step-no">STEP 1</div>
+          <div class="drop-title">Expected Settlement Excel</div>
+          <div class="drop-hint">SKU + Expected Settlement (.xlsx / .xls / .csv)</div>
+          <input type="file" accept=".xlsx,.xls,.csv" id="fileExpected">
+          <div class="drop-status" id="st1">Click or drag file here</div>
+        </div>
+        <div class="drop" id="drop2" data-slot="actual">
+          <div class="step-no">STEP 2</div>
+          <div class="drop-title">Actual Flipkart Settlement Excel</div>
+          <div class="drop-hint">Payment report — any column names, multiple rows per SKU OK</div>
+          <input type="file" accept=".xlsx,.xls,.csv" id="fileActual">
+          <div class="drop-status" id="st2">Click or drag file here</div>
+        </div>
+      </div>
+      <div class="card" id="weekCard" hidden>
+        <div class="card-h">Settlement week</div>
+        <div class="form-row">
+          <label>Week label <input id="weekLabel" type="text"></label>
+          <label>Settlement date <input id="weekDate" type="date"></label>
+          <span class="muted">Detected automatically — change it if needed, then click <b>Save this week</b> to add it to history.</span>
+        </div>
+      </div>
+      <div class="card" id="mappingCard" hidden>
+        <div class="card-h">Column mapping <span class="muted">— detected automatically; correct anything that looks wrong</span></div>
+        <div id="mapping"></div>
+        <div class="form-row"><button class="btn primary" id="btnApplyMap">Apply mapping &amp; reconcile</button></div>
+      </div>
+    </section>
+
+    <!-- RECONCILIATION -->
+    <section class="view" id="view-recon">
+      <div class="filters" id="reconFilters"></div>
+      <div class="table-tools"><span id="reconCount" class="muted"></span><button class="btn" id="btnExportFiltered">Download filtered view</button></div>
+      <div class="table-wrap"><table class="grid" id="reconTable"></table></div>
+    </section>
+
+    <!-- EXCEPTIONS -->
+    <section class="view" id="view-exceptions">
+      <div class="kpis small" id="excKpis"></div>
+      <div class="table-tools"><span class="muted">Payment follow-up working list — sorted by size of difference.</span><button class="btn" id="btnExportExc">Download exceptions</button></div>
+      <div class="table-wrap"><table class="grid" id="excTable"></table></div>
+      <div class="card" id="potentialCard" hidden>
+        <div class="card-h">Potential SKU Match — Requires Review</div>
+        <p class="muted">These SKUs look similar after removing punctuation/spaces but were <b>not</b> merged. Check them manually.</p>
+        <div class="table-wrap"><table class="grid" id="potentialTable"></table></div>
+      </div>
+    </section>
+
+    <!-- SKU ANALYSIS -->
+    <section class="view" id="view-sku">
+      <div class="form-row"><label>SKU <input id="skuPick" list="skuList" type="search" placeholder="Type or pick a SKU" style="width:min(420px,100%)"></label><datalist id="skuList"></datalist></div>
+      <div id="skuDetail" class="empty small">Pick a SKU (or click any SKU in a table) to see this week's details, order breakdown and history.</div>
+    </section>
+
+    <!-- HISTORY -->
+    <section class="view" id="view-history">
+      <div id="histEmpty" class="empty small">No weeks saved yet. After uploading a week's files, click <b>Save this week</b>.</div>
+      <div id="histBody" hidden>
+        <div class="grid2">
+          <div class="card"><div class="card-h">Expected vs Actual by week</div><div class="chart-box"><canvas id="chWeekAmt"></canvas></div></div>
+          <div class="card"><div class="card-h">Reconciliation % by week</div><div class="chart-box"><canvas id="chWeekPct"></canvas></div></div>
+          <div class="card"><div class="card-h">Short payment by week</div><div class="chart-box"><canvas id="chWeekShort"></canvas></div></div>
+          <div class="card"><div class="card-h">Exceptions by week</div><div class="chart-box"><canvas id="chWeekExc"></canvas></div></div>
+        </div>
+        <div class="table-wrap"><table class="grid" id="histTable"></table></div>
+      </div>
+      <div class="card">
+        <div class="card-h">History backup</div>
+        <p class="muted" id="histStoreNote">History is stored in this browser on this PC. Download a backup regularly; restore it on another PC or browser.</p>
+        <div class="form-row">
+          <button class="btn" id="btnBackup">Download backup (.json)</button>
+          <label class="btn">Restore backup<input type="file" accept=".json" id="fileRestore" hidden></label>
+        </div>
+      </div>
+    </section>
+
+    <!-- REPORTS -->
+    <section class="view" id="view-reports">
+      <div class="report-cards">
+        <div class="card"><div class="card-h">Flipkart Payment Recovery Report</div><p class="muted">Short Payment, Payment Not Received and Unmatched SKUs with a total row.</p><button class="btn primary" id="btnRecovery" disabled>Download Excel</button></div>
+        <div class="card"><div class="card-h">Complete Reconciliation Report</div><p class="muted">All SKUs, summary, exceptions, data-quality log and order-level detail.</p><button class="btn primary" id="btnFull" disabled>Download Excel</button></div>
+        <div class="card"><div class="card-h">Weekly History Report</div><p class="muted">Week-wise totals and SKU-wise history across all saved weeks.</p><button class="btn primary" id="btnHistRpt">Download Excel</button></div>
+      </div>
+      <h3 class="section">Recovery report preview</h3>
+      <div class="table-wrap"><table class="grid" id="recoveryTable"></table></div>
+    </section>
+
+    <!-- DATA QUALITY -->
+    <section class="view" id="view-quality">
+      <div id="dqBody" class="empty small">Upload files to run data-quality checks.</div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section class="view" id="view-settings">
+      <div class="card">
+        <div class="card-h">Reconciliation settings</div>
+        <div class="settings" id="settingsForm"></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="drawer" id="drawer" hidden>
+  <div class="drawer-panel">
+    <button class="drawer-close" id="drawerClose" aria-label="Close">×</button>
+    <div id="drawerBody"></div>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script src="assets/util.js"></script>
+<script src="assets/parse.js"></script>
+<script src="assets/recon.js"></script>
+<script src="assets/store.js"></script>
+<script src="assets/export.js"></script>
+<script src="assets/charts.js"></script>
+<script src="assets/views.js"></script>
+<script src="assets/app.js"></script>
+</body>
+</html>
